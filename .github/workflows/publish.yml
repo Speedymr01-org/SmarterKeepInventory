@@ -60,7 +60,7 @@ jobs:
           version: ${{ github.ref_name }}
           changelog: ""
           relations: ""
-          game_versions: 1.21.1
+           game_versions: 26.1.2
           release_type: release
           loaders: paper
           featured: false
