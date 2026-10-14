@@ -7,9 +7,14 @@ $jdkPaths = @{
     "21" = "C:\Program Files\Eclipse Adoptium\jdk-21.0.12.101-hotspot"
 }
 
-if ($jdkPaths.ContainsKey($release)) {
-    $env:JAVA_HOME = $jdkPaths[$release]
-    $env:Path = "$env:JAVA_HOME\bin;" + $env:Path
+# Only override JAVA_HOME if we are running locally and the path exists.
+# In CI, JAVA_HOME is already set by the environment.
+if (-not $env:CI -and $jdkPaths.ContainsKey($release)) {
+    $targetJdk = $jdkPaths[$release]
+    if (Test-Path $targetJdk) {
+        $env:JAVA_HOME = $targetJdk
+        $env:Path = "$env:JAVA_HOME\bin;" + $env:Path
+    }
 }
 
 $mvnArgs = @("clean", "package")
