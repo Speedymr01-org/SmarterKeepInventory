@@ -1,7 +1,15 @@
 # Build script for SmarterKeepInventory plugin
-# Use local JDK 25 if JAVA_HOME is not already set (e.g., in CI)
-if (-not $env:JAVA_HOME) {
-    $env:JAVA_HOME = "C:\Users\Matthew\OneDrive\Programming\mc-plugins\jdk25"
+[xml]$pom = Get-Content -Path "pom.xml" -Raw
+$release = $pom.project.properties.'maven.compiler.release'
+
+$jdkPaths = @{
+    "25" = "C:\Users\speed\OneDrive\Programming\mc-plugins\jdk25"
+    "21" = "C:\Program Files\Eclipse Adoptium\jdk-21.0.12.101-hotspot"
+}
+
+if ($jdkPaths.ContainsKey($release)) {
+    $env:JAVA_HOME = $jdkPaths[$release]
+    $env:Path = "$env:JAVA_HOME\bin;" + $env:Path
 }
 
 $mvnArgs = @("clean", "package")

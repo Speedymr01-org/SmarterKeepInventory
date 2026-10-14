@@ -1,0 +1,8 @@
+name: SmarterKeepInventory
+version: 1.0.0
+main: com.Speedymr01.SmarterKeepInventory
+api-version: '1.21'
+commands:
+  keepinv:
+    description: Toggle keep inventory on death
+    aliases: [ki]
