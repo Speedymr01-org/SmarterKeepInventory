@@ -3,7 +3,7 @@
 $release = $pom.project.properties.'maven.compiler.release'
 
 $jdkPaths = @{
-    "25" = "C:\Users\speed\OneDrive\Programming\mc-plugins\jdk25"
+    "25" = "C:\Users\Matthew\OneDrive\Programming\mc-plugins\jdk25"
     "21" = "C:\Program Files\Eclipse Adoptium\jdk-21.0.12.101-hotspot"
 }
 

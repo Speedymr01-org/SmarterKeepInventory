@@ -1,16 +1,20 @@
 package com.Speedymr01.manager;
 
 import com.Speedymr01.SmarterKeepInventory;
+import com.Speedymr01.attribution.KillAttributionService;
+import com.Speedymr01.attribution.KillAttributionService.KillCredit;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
+import org.bukkit.OfflinePlayer;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.entity.PlayerDeathEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
+import org.bukkit.event.player.PlayerRespawnEvent;
 import org.bukkit.scheduler.BukkitRunnable;
 import org.bukkit.scheduler.BukkitTask;
 
@@ -24,10 +28,13 @@ public class KeepInvManager implements Listener {
     private static final double MOVEMENT_THRESHOLD_SQ = 1.0;
 
     private final SmarterKeepInventory plugin;
+    private final KillAttributionService attributionService;
     private final Map<UUID, PendingToggle> pendingToggles = new ConcurrentHashMap<>();
+    private final Map<UUID, Component> pendingVictimMessages = new ConcurrentHashMap<>();
 
-    public KeepInvManager(SmarterKeepInventory plugin) {
+    public KeepInvManager(SmarterKeepInventory plugin, KillAttributionService attributionService) {
         this.plugin = plugin;
+        this.attributionService = attributionService;
     }
 
     public boolean isEnabled(UUID playerId) {
@@ -77,6 +84,14 @@ public class KeepInvManager implements Listener {
     @EventHandler(priority = EventPriority.HIGHEST)
     public void onPlayerDeath(PlayerDeathEvent event) {
         Player player = event.getEntity();
+
+        // Trap / indirect attribution (cause-first). Credited kills never keep inventory.
+        KillCredit credit = attributionService.resolveKill(player);
+        if (credit != null) {
+            deliverTrapKillMessages(credit, player);
+            return;
+        }
+
         Player killer = player.getKiller();
         if (killer != null) return;
 
@@ -86,6 +101,48 @@ public class KeepInvManager implements Listener {
             event.getDrops().clear();
             event.setDroppedExp(0);
             player.sendMessage(Component.text("Your items were kept (keep inventory is enabled).", NamedTextColor.GREEN));
+        }
+    }
+
+    private void deliverTrapKillMessages(KillCredit credit, Player victim) {
+        String path = "messages.kills." + credit.source().configKey() + ".";
+        String creditedName = resolveName(credit.credited());
+        String victimName = victim.getName();
+
+        String killerText = plugin.getConfig().getString(path + "killer", "");
+        if (!killerText.isEmpty()) {
+            Player killer = Bukkit.getPlayer(credit.credited());
+            if (killer != null && killer.isOnline()) {
+                killer.sendMessage(Component.text(
+                        format(killerText, creditedName, victimName, credit.effectLabel()), NamedTextColor.RED));
+            }
+        }
+
+        String victimText = plugin.getConfig().getString(path + "victim", "");
+        if (!victimText.isEmpty()) {
+            pendingVictimMessages.put(victim.getUniqueId(), Component.text(
+                    format(victimText, creditedName, victimName, credit.effectLabel()), NamedTextColor.RED));
+        }
+    }
+
+    private String format(String template, String creditedName, String victimName, String effectLabel) {
+        return template
+                .replace("%player%", creditedName)
+                .replace("%victim%", victimName)
+                .replace("%effect%", effectLabel != null ? effectLabel : "potion");
+    }
+
+    private String resolveName(UUID playerId) {
+        OfflinePlayer offline = Bukkit.getOfflinePlayer(playerId);
+        String name = offline.getName();
+        return name != null ? name : "Unknown";
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR)
+    public void onPlayerRespawn(PlayerRespawnEvent event) {
+        Component message = pendingVictimMessages.remove(event.getPlayer().getUniqueId());
+        if (message != null) {
+            event.getPlayer().sendMessage(message);
         }
     }
 

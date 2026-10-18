@@ -1,0 +1,52 @@
+# SmarterKeepInventory — trap & indirect kill attribution
+
+traps:
+  # Blocks that are tracked when placed (focused on gravity traps).
+  tracked-blocks:
+    - POINTED_DRIPSTONE
+    - ANVIL
+  # Track player-placed dispensers and credit their owner for dispensed projectiles.
+  track-dispensers: true
+  # Persist trap ownership to traps.yml (autosaved; final save on server stop).
+  persistence-enabled: true
+  autosave-interval-seconds: 300
+
+attribution:
+  # Poison/wither effect kills (applier tracked via splash/lingering/arrow with a known source).
+  indirect:
+    enabled: true
+    # Allow crediting the victim's own traps/effects? (false = self kills are not credited)
+    self-attribution: false
+  # Fire/burn deaths credited to whoever ignited the victim (fire charges, flame arrows, etc.).
+  fire:
+    enabled: true
+    # How long an ignition stays valid when the victim later dies of fire (seconds).
+    ignition-expiry-seconds: 10
+
+messages:
+  # Sent only for trap/indirect kills (not for direct PvP). %player% = credited player.
+  kills:
+    dripstone:
+      victim: "You were impaled by %player%'s dripstone."
+      killer: "You impaled %victim% with dripstone."
+    anvil:
+      victim: "You were squished by %player%'s anvil."
+      killer: "You squished %victim% with an anvil."
+    suffocation:
+      victim: "You suffocated under %player%'s falling blocks."
+      killer: "You suffocated %victim% under your blocks."
+    indirect:
+      victim: "You were killed by %player%'s %effect%."
+      killer: "You killed %victim% with %effect%."
+    arrow:
+      victim: "You were shot by %player%'s trap."
+      killer: "You shot %victim% with your trap."
+    fire:
+      victim: "You burned to death from %player%'s fire."
+      killer: "Your fire burned %victim% alive."
+    explosion:
+      victim: "You were blown up by %player%'s trap."
+      killer: "You blew up %victim% with your trap."
+    generic:
+      victim: "You were killed by %player%'s trap."
+      killer: "Your trap killed %victim%."
