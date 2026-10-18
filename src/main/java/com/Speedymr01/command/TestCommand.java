@@ -5,6 +5,7 @@ import net.kyori.adventure.text.event.ClickEvent;
 import net.kyori.adventure.text.event.HoverEvent;
 import net.kyori.adventure.text.format.NamedTextColor;
 import net.kyori.adventure.text.format.TextDecoration;
+import org.bukkit.Bukkit;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
@@ -188,7 +189,7 @@ public class TestCommand implements CommandExecutor, TabCompleter {
             return;
         }
         session.active = false;
-        printSummary(player, session);
+        printSummary(player, session, true);
     }
 
     private void handleAnswer(Player player, boolean passed, String[] args) {
@@ -229,7 +230,7 @@ public class TestCommand implements CommandExecutor, TabCompleter {
 
         if (session.index >= TESTS.size()) {
             session.active = false;
-            printSummary(player, session);
+            printSummary(player, session, false);
         } else {
             printTest(player, session);
         }
@@ -260,7 +261,7 @@ public class TestCommand implements CommandExecutor, TabCompleter {
         return pass.append(Component.text("  ")).append(fail).append(Component.text("  ")).append(stop);
     }
 
-    private void printSummary(Player player, Session session) {
+    private void printSummary(Player player, Session session, boolean stoppedEarly) {
         int passed = 0;
         int failed = 0;
         int untested = 0;
@@ -273,22 +274,32 @@ public class TestCommand implements CommandExecutor, TabCompleter {
                 failed++;
             }
         }
-        player.sendMessage(Component.text("=== Test run #" + session.runId + " finished ===", NamedTextColor.GOLD));
-        player.sendMessage(Component.text("Passed: ", NamedTextColor.GRAY).append(Component.text(passed, NamedTextColor.GREEN))
+
+        List<Component> lines = new ArrayList<>();
+        lines.add(Component.text("=== Test run #" + session.runId + " (" + player.getName() + ") finished ===", NamedTextColor.GOLD));
+        if (stoppedEarly) {
+            lines.add(Component.text("(stopped early)", NamedTextColor.YELLOW));
+        }
+        lines.add(Component.text("Passed: ", NamedTextColor.GRAY).append(Component.text(passed, NamedTextColor.GREEN))
                 .append(Component.text("  Failed: ", NamedTextColor.GRAY)).append(Component.text(failed, NamedTextColor.RED))
                 .append(Component.text("  Untested: ", NamedTextColor.GRAY)).append(Component.text(untested, NamedTextColor.YELLOW)));
 
         for (int i = 0; i < TESTS.size(); i++) {
             Boolean answer = session.answers[i];
             if (answer != null && !answer) {
-                player.sendMessage(Component.text("✘ " + (i + 1) + ". " + TESTS.get(i).title(), NamedTextColor.RED));
+                lines.add(Component.text("✘ " + (i + 1) + ". " + TESTS.get(i).title(), NamedTextColor.RED));
             }
         }
         for (int i = 0; i < TESTS.size(); i++) {
             if (session.answers[i] == null) {
-                player.sendMessage(Component.text("• " + (i + 1) + ". " + TESTS.get(i).title() + " (untested)", NamedTextColor.YELLOW));
+                lines.add(Component.text("• " + (i + 1) + ". " + TESTS.get(i).title() + " (untested)", NamedTextColor.YELLOW));
             }
         }
-        player.sendMessage(Component.text("Run /kitest start to test again, or /kitest to see the list.", NamedTextColor.GRAY));
+        lines.add(Component.text("Run /kitest start to test again, or /kitest to see the list.", NamedTextColor.GRAY));
+
+        for (Component line : lines) {
+            player.sendMessage(line);
+            Bukkit.getConsoleSender().sendMessage(line);
+        }
     }
 }
