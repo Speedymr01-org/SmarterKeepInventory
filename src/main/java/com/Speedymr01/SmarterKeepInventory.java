@@ -4,6 +4,7 @@ import com.Speedymr01.attribution.EffectAttributionTracker;
 import com.Speedymr01.attribution.KillAttributionService;
 import com.Speedymr01.attribution.TrapManager;
 import com.Speedymr01.command.KeepInvCommand;
+import com.Speedymr01.command.TestCommand;
 import com.Speedymr01.manager.KeepInvManager;
 import org.bukkit.plugin.java.JavaPlugin;
 
@@ -15,6 +16,7 @@ public class SmarterKeepInventory extends JavaPlugin {
     private KillAttributionService killAttributionService;
     private KeepInvManager keepInvManager;
     private KeepInvCommand keepInvCommand;
+    private TestCommand testCommand;
 
     @Override
     public void onEnable() {
@@ -26,6 +28,7 @@ public class SmarterKeepInventory extends JavaPlugin {
         this.killAttributionService = new KillAttributionService(this, trapManager, effectAttributionTracker);
         this.keepInvManager = new KeepInvManager(this, killAttributionService);
         this.keepInvCommand = new KeepInvCommand(this);
+        this.testCommand = new TestCommand();
 
         getServer().getPluginManager().registerEvents(keepInvManager, this);
         getServer().getPluginManager().registerEvents(trapManager, this);
@@ -33,6 +36,8 @@ public class SmarterKeepInventory extends JavaPlugin {
 
         getCommand("keepinv").setExecutor(keepInvCommand);
         getCommand("keepinv").setTabCompleter(keepInvCommand);
+        getCommand("kitest").setExecutor(testCommand);
+        getCommand("kitest").setTabCompleter(testCommand);
 
         getLogger().info("SmarterKeepInventory enabled!");
     }

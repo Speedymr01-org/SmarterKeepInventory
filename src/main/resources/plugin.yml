@@ -6,3 +6,6 @@ commands:
   keepinv:
     description: Toggle keep inventory on death
     aliases: [ki]
+  kitest:
+    description: Interactive in-game test checklist
+    aliases: [skitest]
