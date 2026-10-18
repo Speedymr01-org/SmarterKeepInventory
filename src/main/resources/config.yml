@@ -12,7 +12,8 @@ traps:
   autosave-interval-seconds: 300
 
 attribution:
-  # Poison/wither effect kills (applier tracked via splash/lingering/arrow with a known source).
+  # Wither effect kills (applier tracked via splash/lingering/arrow with a known source).
+  # Poison is not tracked: it can never kill (the victim is always left at 1 HP).
   indirect:
     enabled: true
     # Allow crediting the victim's own traps/effects? (false = self kills are not credited)

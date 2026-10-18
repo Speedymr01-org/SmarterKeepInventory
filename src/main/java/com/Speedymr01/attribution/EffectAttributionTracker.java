@@ -34,8 +34,9 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
 
 /**
- * Tracks who is responsible for poison/wither effects (transient) and for ignitions
- * (who set a player on fire). All records are short-lived, main-thread only.
+ * Tracks who is responsible for wither effects (transient) and for ignitions
+ * (who set a player on fire). Poison is not tracked: it can never be the killing
+ * blow (the victim is always left at 1 HP). All records are short-lived, main-thread only.
  */
 public class EffectAttributionTracker implements Listener {
 
@@ -104,7 +105,7 @@ public class EffectAttributionTracker implements Listener {
     // Lookups used by KillAttributionService
     // ------------------------------------------------------------------
 
-    /** Applier of an active poison/wither effect on the victim, or null. */
+    /** Applier of an active wither effect on the victim, or null. */
     public UUID getApplier(UUID victimId, PotionEffectType type) {
         if (!indirectEnabled) {
             return null;
@@ -298,7 +299,8 @@ public class EffectAttributionTracker implements Listener {
                 if (!indirectEnabled) {
                     return;
                 }
-                if (!type.equals(PotionEffectType.POISON) && !type.equals(PotionEffectType.WITHER)) {
+                // Only wither is tracked: poison cannot kill (health floors at 1 HP).
+                if (!type.equals(PotionEffectType.WITHER)) {
                     return;
                 }
                 EntityPotionEffectEvent.Cause cause = event.getCause();
@@ -356,7 +358,7 @@ public class EffectAttributionTracker implements Listener {
                     found = pending.applier;
                 }
             }
-            // Do NOT clear: one splash can commit several effects (poison + wither).
+            // Do NOT clear: one splash can commit several effect events (multi-effect potions).
             // Stale entries expire via the tolerance pruning above.
         }
         return found;

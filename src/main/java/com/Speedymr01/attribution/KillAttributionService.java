@@ -89,14 +89,12 @@ public class KillAttributionService {
             }
         }
 
-        // 3. Poison/wither ticks -> effect applier record.
-        if (cause == EntityDamageEvent.DamageCause.POISON || cause == EntityDamageEvent.DamageCause.WITHER) {
-            PotionEffectType type = cause == EntityDamageEvent.DamageCause.POISON
-                    ? PotionEffectType.POISON : PotionEffectType.WITHER;
-            UUID applier = effectTracker.getApplier(victimId, type);
+        // 3. Wither ticks -> effect applier record. (Poison is never checked: it cannot kill —
+        //    the victim is always left at 1 HP.)
+        if (cause == EntityDamageEvent.DamageCause.WITHER) {
+            UUID applier = effectTracker.getApplier(victimId, PotionEffectType.WITHER);
             if (applier != null) {
-                String label = type.equals(PotionEffectType.POISON) ? "poison" : "wither";
-                return new KillCredit(applier, KillSource.INDIRECT, label);
+                return new KillCredit(applier, KillSource.INDIRECT, "wither");
             }
         }
 
@@ -151,21 +149,15 @@ public class KillAttributionService {
     /** %effect% placeholder for INDIRECT kills from potion entities. */
     private String effectForDamager(Entity damager) {
         if (damager instanceof ThrownPotion potion) {
-            boolean poison = false;
             boolean wither = false;
             boolean harming = false;
             for (PotionEffect effect : potion.getEffects()) {
                 PotionEffectType type = effect.getType();
-                if (type.equals(PotionEffectType.POISON)) {
-                    poison = true;
-                } else if (type.equals(PotionEffectType.WITHER)) {
+                if (type.equals(PotionEffectType.WITHER)) {
                     wither = true;
                 } else if (type.equals(PotionEffectType.INSTANT_DAMAGE)) {
                     harming = true;
                 }
-            }
-            if (poison) {
-                return "poison";
             }
             if (wither) {
                 return "wither";
