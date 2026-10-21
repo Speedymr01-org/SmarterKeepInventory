@@ -22,7 +22,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * Interactive in-game test checklist: /kitest prints the full list with a Start button,
- * then walks through each test one by one with Pass/Fail buttons (all in chat).
+ * then walks through each test one by one with Pass/Fail/Skip buttons (all in chat).
  * Results are kept in memory (per player) for the session.
  */
 public class TestCommand implements CommandExecutor, TabCompleter {
@@ -37,53 +37,84 @@ public class TestCommand implements CommandExecutor, TabCompleter {
             new Test("Anvil squish",
                     "Drop a player-placed anvil on an enabled player.",
                     "No keep-inventory; anvil messages to both players."),
-            new Test("Buried under sand/gravel (suffocation)",
-                    "Drop player-placed sand or gravel on an enabled player and leave them buried until they suffocate. (Falling sand deals no impact damage — anvils and dripstone are the crush cases.)",
+            new Test("Sand burial (suffocation)",
+                    "Drop player-placed sand on an enabled player and leave them buried until they suffocate.",
                     "No keep-inventory; suffocation messages to both players."),
-            new Test("PvP + mob deaths unchanged",
-                    "Kill an enabled player with a sword. Then let a zombie kill an enabled player.",
-                    "PvP: items drop, no new messages. Mob: items kept + the green keep-inventory message."),
+            new Test("Gravel burial (suffocation)",
+                    "Drop player-placed gravel on an enabled player and leave them buried until they suffocate.",
+                    "No keep-inventory; suffocation messages to both players."),
+            new Test("PvP sword kill (unchanged)",
+                    "Kill an enabled player with a sword.",
+                    "Items drop as normal; no trap messages."),
+            new Test("Mob kill (unchanged)",
+                    "Let a zombie or other mob kill an enabled player.",
+                    "Items kept + the green keep-inventory message; no trap messages."),
             new Test("Victim quits on the death screen",
-                    "Trap-kill an enabled player and have them disconnect while dead, then rejoin.",
+                    "Trap-kill an enabled player, have them disconnect while dead, then rejoin.",
                     "The trap kill message appears when they respawn after rejoining."),
-            new Test("Dispenser harming potion",
-                    "A player places a dispenser holding a splash Potion of Harming and fires it at an enabled player.",
-                    "Credited to the dispenser placer; indirect message with 'harming potion'. Also test triggering your own dispenser: no credit."),
+            new Test("Dispenser harming potion kill",
+                    "Place a dispenser loaded with a splash Potion of Harming, fire it at an enabled player and let it kill them.",
+                    "Credited to the dispenser placer; indirect message ('harming potion') to both players."),
+            new Test("Own dispenser self-kill (no credit)",
+                    "Use your own dispenser (harming splash or TNT) to kill yourself.",
+                    "No credit: /ki rules apply as normal (usually items kept) and no trap message is sent."),
             new Test("Dispenser arrow direct kill",
-                    "Dispenser with arrows; fire at an enabled player and kill them with a direct hit.",
+                    "Place a dispenser with arrows, fire at an enabled player and kill them with a direct hit.",
                     "Credited to the dispenser placer; arrow messages to both players."),
-            new Test("Dispenser fire charge - burn to death",
-                    "Dispenser with a fire charge; let the victim burn to death from the fire.",
-                    "Fire message credited to the dispenser placer."),
             new Test("Dispenser fire charge - direct hit",
                     "Dispenser fire charge that directly hits and kills the victim.",
                     "Credited to the dispenser placer (fire message)."),
-            new Test("Sword kill mid-burn",
+            new Test("Dispenser fire charge - burn to death",
+                    "Dispenser fire charge; let the victim burn to death from the fire.",
+                    "Fire message credited to the dispenser placer."),
+            new Test("Dispenser fire charge - sword kill mid-burn",
                     "Light a player on fire with a dispenser fire charge, then kill them with a sword before they burn out.",
                     "Credited to the sword player, NOT the dispenser owner."),
-            new Test("'While fighting X' deaths",
-                    "Let the victim fight another player while a dispenser fire charge burns them to death; repeat with a dispenser wither potion.",
+            new Test("While-fighting fire death",
+                    "Let the victim fight another player while a dispenser fire charge burns them to death.",
+                    "Credit goes to the dispenser owner, not the player they were fighting."),
+            new Test("While-fighting wither death",
+                    "Let the victim fight another player while a dispenser launches a wither potion that kills them.",
                     "Credit goes to the dispenser owner, not the player they were fighting."),
             new Test("Dispenser TNT",
                     "Dispenser with TNT; blow up an enabled player.",
                     "Explosion message credited to the dispenser placer."),
-            new Test("Player-caused ignition",
-                    "Burn an enabled player to death with a thrown fire charge, a Flame bow, or a Fire Aspect sword.",
-                    "Fire message credited to the igniter."),
-            new Test("Restart persistence",
-                    "Place traps and a dispenser, then restart the server and check plugins/SmarterKeepInventory/traps.yml.",
-                    "traps.yml exists and reloads after restart; autosave fires at the configured interval; saved on server stop.")
+            new Test("Player fire charge ignition",
+                    "Burn an enabled player to death with a thrown fire charge.",
+                    "Fire message credited to the thrower."),
+            new Test("Flame bow ignition",
+                    "Burn an enabled player to death with a Flame-enchanted bow.",
+                    "Fire message credited to the archer."),
+            new Test("Fire Aspect ignition",
+                    "Burn an enabled player to death with a Fire Aspect sword.",
+                    "Fire message credited to the attacker."),
+            new Test("Trap ownership survives restart",
+                    "Place an anvil or dripstone trap, restart the server, then trigger it on an enabled player.",
+                    "Still credited after the restart (traps.yml loaded)."),
+            new Test("Dispenser ownership survives restart",
+                    "Place a dispenser, restart the server, then fire it at an enabled player.",
+                    "Still credited after the restart (traps.yml loaded)."),
+            new Test("Autosave writes traps.yml",
+                    "Place a tracked block and wait for traps.autosave-interval-seconds.",
+                    "The new entry appears in plugins/SmarterKeepInventory/traps.yml without a manual save."),
+            new Test("Save on server stop",
+                    "Place a tracked block, then stop the server before the autosave interval elapses.",
+                    "The entry is present in traps.yml after the shutdown save.")
     );
+
+    private enum Answer {
+        PASS, FAIL, SKIP
+    }
 
     private static final class Session {
         final int runId;
-        final Boolean[] answers;
+        final Answer[] answers;
         int index;
         boolean active;
 
         Session(int runId) {
             this.runId = runId;
-            this.answers = new Boolean[TESTS.size()];
+            this.answers = new Answer[TESTS.size()];
             this.active = true;
         }
     }
@@ -101,7 +132,9 @@ public class TestCommand implements CommandExecutor, TabCompleter {
         switch (sub) {
             case "start" -> startRun(player);
             case "stop" -> stopRun(player);
-            case "pass", "fail" -> handleAnswer(player, sub.equals("pass"), args);
+            case "pass" -> handleAnswer(player, Answer.PASS, args);
+            case "fail" -> handleAnswer(player, Answer.FAIL, args);
+            case "skip" -> handleAnswer(player, Answer.SKIP, args);
             default -> printList(player);
         }
         return true;
@@ -125,18 +158,21 @@ public class TestCommand implements CommandExecutor, TabCompleter {
         player.sendMessage(Component.text(TESTS.size() + " tests. Click Start and answer each one in chat.", NamedTextColor.GRAY));
 
         for (int i = 0; i < TESTS.size(); i++) {
-            Boolean answer = session != null ? session.answers[i] : null;
+            Answer answer = session != null ? session.answers[i] : null;
             String icon;
             NamedTextColor color;
             if (answer == null) {
                 icon = "• ";
                 color = NamedTextColor.GRAY;
-            } else if (answer) {
+            } else if (answer == Answer.PASS) {
                 icon = "✔ ";
                 color = NamedTextColor.GREEN;
-            } else {
+            } else if (answer == Answer.FAIL) {
                 icon = "✘ ";
                 color = NamedTextColor.RED;
+            } else {
+                icon = "» ";
+                color = NamedTextColor.YELLOW;
             }
             player.sendMessage(Component.text(icon + (i + 1) + ". " + TESTS.get(i).title(), color));
         }
@@ -180,9 +216,9 @@ public class TestCommand implements CommandExecutor, TabCompleter {
         printSummary(player, session, true);
     }
 
-    private void handleAnswer(Player player, boolean passed, String[] args) {
+    private void handleAnswer(Player player, Answer answer, String[] args) {
         if (args.length < 3) {
-            player.sendMessage(Component.text("Use the Pass/Fail buttons in chat (or /kitest start).", NamedTextColor.RED));
+            player.sendMessage(Component.text("Use the Pass/Fail/Skip buttons in chat (or /kitest start).", NamedTextColor.RED));
             return;
         }
         int runId;
@@ -210,11 +246,13 @@ public class TestCommand implements CommandExecutor, TabCompleter {
         }
 
         Test answered = TESTS.get(index);
-        session.answers[index] = passed;
+        session.answers[index] = answer;
         session.index++;
-        player.sendMessage(passed
-                ? Component.text("✔ Passed: " + answered.title(), NamedTextColor.GREEN)
-                : Component.text("✘ Failed: " + answered.title(), NamedTextColor.RED));
+        player.sendMessage(switch (answer) {
+            case PASS -> Component.text("✔ Passed: " + answered.title(), NamedTextColor.GREEN);
+            case FAIL -> Component.text("✘ Failed: " + answered.title(), NamedTextColor.RED);
+            case SKIP -> Component.text("» Skipped: " + answered.title(), NamedTextColor.YELLOW);
+        });
 
         if (session.index >= TESTS.size()) {
             session.active = false;
@@ -243,23 +281,31 @@ public class TestCommand implements CommandExecutor, TabCompleter {
         Component fail = Component.text("[✘ Fail]", NamedTextColor.RED, TextDecoration.BOLD)
                 .hoverEvent(HoverEvent.showText(Component.text("Mark as failed and continue")))
                 .clickEvent(ClickEvent.runCommand("/kitest fail " + session.runId + " " + session.index));
+        Component skip = Component.text("[» Skip]", NamedTextColor.YELLOW, TextDecoration.BOLD)
+                .hoverEvent(HoverEvent.showText(Component.text("Mark as skipped and continue")))
+                .clickEvent(ClickEvent.runCommand("/kitest skip " + session.runId + " " + session.index));
         Component stop = Component.text("[■ Stop]", NamedTextColor.GRAY)
                 .hoverEvent(HoverEvent.showText(Component.text("Stop the run and show the summary")))
                 .clickEvent(ClickEvent.runCommand("/kitest stop"));
-        return pass.append(Component.text("  ")).append(fail).append(Component.text("  ")).append(stop);
+        return pass.append(Component.text("  ")).append(fail)
+                .append(Component.text("  ")).append(skip)
+                .append(Component.text("  ")).append(stop);
     }
 
     private void printSummary(Player player, Session session, boolean stoppedEarly) {
         int passed = 0;
         int failed = 0;
+        int skipped = 0;
         int untested = 0;
-        for (Boolean answer : session.answers) {
+        for (Answer answer : session.answers) {
             if (answer == null) {
                 untested++;
-            } else if (answer) {
-                passed++;
             } else {
-                failed++;
+                switch (answer) {
+                    case PASS -> passed++;
+                    case FAIL -> failed++;
+                    case SKIP -> skipped++;
+                }
             }
         }
 
@@ -270,12 +316,17 @@ public class TestCommand implements CommandExecutor, TabCompleter {
         }
         lines.add(Component.text("Passed: ", NamedTextColor.GRAY).append(Component.text(passed, NamedTextColor.GREEN))
                 .append(Component.text("  Failed: ", NamedTextColor.GRAY)).append(Component.text(failed, NamedTextColor.RED))
+                .append(Component.text("  Skipped: ", NamedTextColor.GRAY)).append(Component.text(skipped, NamedTextColor.YELLOW))
                 .append(Component.text("  Untested: ", NamedTextColor.GRAY)).append(Component.text(untested, NamedTextColor.YELLOW)));
 
         for (int i = 0; i < TESTS.size(); i++) {
-            Boolean answer = session.answers[i];
-            if (answer != null && !answer) {
+            if (session.answers[i] == Answer.FAIL) {
                 lines.add(Component.text("✘ " + (i + 1) + ". " + TESTS.get(i).title(), NamedTextColor.RED));
+            }
+        }
+        for (int i = 0; i < TESTS.size(); i++) {
+            if (session.answers[i] == Answer.SKIP) {
+                lines.add(Component.text("» " + (i + 1) + ". " + TESTS.get(i).title() + " (skipped)", NamedTextColor.YELLOW));
             }
         }
         for (int i = 0; i < TESTS.size(); i++) {
