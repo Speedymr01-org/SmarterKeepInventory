@@ -5,6 +5,7 @@ import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.NamespacedKey;
+import org.bukkit.Tag;
 import org.bukkit.World;
 import org.bukkit.block.Block;
 import org.bukkit.configuration.file.YamlConfiguration;
@@ -12,6 +13,7 @@ import org.bukkit.entity.AbstractArrow;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.FallingBlock;
 import org.bukkit.entity.Firework;
+import org.bukkit.entity.Player;
 import org.bukkit.entity.Projectile;
 import org.bukkit.entity.SmallFireball;
 import org.bukkit.entity.TNTPrimed;
@@ -23,6 +25,7 @@ import org.bukkit.event.block.BlockBreakEvent;
 import org.bukkit.event.block.BlockDispenseEvent;
 import org.bukkit.event.block.BlockPlaceEvent;
 import org.bukkit.event.entity.EntityChangeBlockEvent;
+import org.bukkit.event.entity.EntityExplodeEvent;
 import org.bukkit.event.entity.EntitySpawnEvent;
 import org.bukkit.persistence.PersistentDataType;
 import org.bukkit.projectiles.BlockProjectileSource;
@@ -31,7 +34,9 @@ import org.bukkit.scheduler.BukkitTask;
 
 import java.io.File;
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.Deque;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -59,16 +64,33 @@ public class TrapManager implements Listener {
     private record PendingDispense(int tick, BlockKey dispenser, UUID owner, Material item) {
     }
 
+    /** A placed block whose explosion is credited to the placer (TNT, beds, respawn anchors). */
+    private record ExplosiveBlock(UUID owner, Material material) {
+    }
+
+    /** A recent explosion caused by a credited entity; used to inherit ownership through TNT chains. */
+    private record RecentExplosion(UUID worldId, double x, double y, double z, double radius, UUID owner,
+                                   int expiresAt) {
+    }
+
     /** How many ticks a pending dispense stays matchable. */
     private static final int PENDING_DISPENSE_TICKS = 2;
     /** Max squared distance between a spawned entity and the dispenser block center. */
     private static final double DISPENSE_MATCH_RADIUS_SQ = 9.0;
+    /** Max distance from the victim to a consumed bed/anchor block that is still credited. */
+    private static final double EXPLOSION_CREDIT_RADIUS = 12.0;
+    /** Ticks during which a chained TNT can inherit ownership from a recent explosion. */
+    private static final int CHAIN_INHERIT_TICKS = 10;
+    /** Interval (ticks) for dropping explosive-block records whose block no longer exists. */
+    private static final long EXPLOSIVE_PRUNE_INTERVAL_TICKS = 6000L;
 
     private final SmarterKeepInventory plugin;
     private final NamespacedKey ownerKey;
 
     private final Map<BlockKey, UUID> blockOwners = new ConcurrentHashMap<>();
     private final Map<BlockKey, UUID> dispenserOwners = new ConcurrentHashMap<>();
+    private final Map<BlockKey, ExplosiveBlock> explosiveBlocks = new ConcurrentHashMap<>();
+    private final List<RecentExplosion> recentExplosions = new ArrayList<>();
     private final Set<Material> trackedBlocks = ConcurrentHashMap.newKeySet();
     private final Deque<PendingDispense> pendingDispenses = new ConcurrentLinkedDeque<>();
 
@@ -78,6 +100,7 @@ public class TrapManager implements Listener {
     private final long autosaveTicks;
     private final File trapsFile;
     private BukkitTask autosaveTask;
+    private BukkitTask explosivePruneTask;
 
     public TrapManager(SmarterKeepInventory plugin) {
         this.plugin = plugin;
@@ -103,6 +126,9 @@ public class TrapManager implements Listener {
             this.autosaveTask = Bukkit.getScheduler().runTaskTimerAsynchronously(
                     plugin, this::saveTraps, autosaveTicks, autosaveTicks);
         }
+        this.explosivePruneTask = Bukkit.getScheduler().runTaskTimer(
+                plugin, this::pruneExplosiveBlocks,
+                EXPLOSIVE_PRUNE_INTERVAL_TICKS, EXPLOSIVE_PRUNE_INTERVAL_TICKS);
     }
 
     // ------------------------------------------------------------------
@@ -111,6 +137,44 @@ public class TrapManager implements Listener {
 
     public UUID getBlockOwner(Block block) {
         return blockOwners.get(BlockKey.of(block));
+    }
+
+    /**
+     * Finds the placer of an explosive block (bed / respawn anchor) near {@code location} that has
+     * already been consumed — i.e. the block that just exploded. Bed and respawn-anchor explosions
+     * deal damage <em>before</em> any explosion event fires, so the placer can only be recovered
+     * from the ownership map at death time. Only blocks that are now air qualify, so a decorative
+     * bed that is still standing is never credited.
+     */
+    public UUID getExplosionBlockOwner(Location location) {
+        World world = location.getWorld();
+        if (world == null) {
+            return null;
+        }
+        UUID worldId = world.getUID();
+        UUID best = null;
+        double bestDistSq = EXPLOSION_CREDIT_RADIUS * EXPLOSION_CREDIT_RADIUS;
+        for (Map.Entry<BlockKey, ExplosiveBlock> entry : explosiveBlocks.entrySet()) {
+            BlockKey key = entry.getKey();
+            if (!key.worldId().equals(worldId) || entry.getValue().material() == Material.TNT) {
+                continue; // TNT explosions are entity explosions, handled by the stamped entity
+            }
+            if (!world.isChunkLoaded(key.x() >> 4, key.z() >> 4)) {
+                continue;
+            }
+            if (world.getBlockAt(key.x(), key.y(), key.z()).getType() != Material.AIR) {
+                continue; // still standing: it did not explode
+            }
+            double dx = key.x() + 0.5 - location.getX();
+            double dy = key.y() + 0.5 - location.getY();
+            double dz = key.z() + 0.5 - location.getZ();
+            double distSq = dx * dx + dy * dy + dz * dz;
+            if (distSq < bestDistSq) {
+                best = entry.getValue().owner();
+                bestDistSq = distSq;
+            }
+        }
+        return best;
     }
 
     public UUID getDispenserOwner(Block block) {
@@ -151,6 +215,29 @@ public class TrapManager implements Listener {
             dispenserOwners.put(BlockKey.of(block), event.getPlayer().getUniqueId());
             debug("placed dispenser at " + BlockKey.of(block) + " for " + event.getPlayer().getName());
         }
+        trackExplosiveBlock(block, event.getPlayer());
+    }
+
+    /**
+     * Records the placer of blocks whose explosion is credited: TNT anywhere, beds only in worlds
+     * where they explode (Nether/End) and respawn anchors only outside the Nether. World gating
+     * keeps the ownership map (which is persisted) from recording every decorative bed on the server.
+     */
+    private void trackExplosiveBlock(Block block, Player player) {
+        Material type = block.getType();
+        World.Environment environment = block.getWorld().getEnvironment();
+        boolean explosive = type == Material.TNT
+                || (Tag.BEDS.isTagged(type)
+                && (environment == World.Environment.NETHER || environment == World.Environment.THE_END))
+                || (type == Material.RESPAWN_ANCHOR
+                && (environment == World.Environment.NORMAL || environment == World.Environment.THE_END));
+        if (!explosive) {
+            return;
+        }
+        explosiveBlocks.put(BlockKey.of(block),
+                new ExplosiveBlock(player.getUniqueId(), type));
+        debug("placed explosive block " + type + " at " + BlockKey.of(block)
+                + " for " + player.getName());
     }
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
@@ -158,6 +245,7 @@ public class TrapManager implements Listener {
         BlockKey key = BlockKey.of(event.getBlock());
         blockOwners.remove(key);
         dispenserOwners.remove(key);
+        explosiveBlocks.remove(key);
     }
 
     // ------------------------------------------------------------------
@@ -171,12 +259,14 @@ public class TrapManager implements Listener {
             handleFallingBlockSpawn(fallingBlock);
             return;
         }
-        if (!trackDispensers) {
+        if (entity instanceof Projectile projectile) {
+            if (trackDispensers) {
+                handleProjectileSpawn(projectile);
+            }
             return;
         }
-        if (entity instanceof Projectile projectile) {
-            handleProjectileSpawn(projectile);
-        } else if (entity instanceof TNTPrimed tnt) {
+        if (entity instanceof TNTPrimed tnt) {
+            // Independent of dispenser tracking: placed TNT and chains are always credited.
             handleTntSpawn(tnt);
         }
     }
@@ -278,9 +368,115 @@ public class TrapManager implements Listener {
     }
 
     private void handleTntSpawn(TNTPrimed tnt) {
-        UUID owner = matchPendingDispense(tnt.getLocation(), tnt);
-        if (owner != null) {
-            stampOwner(tnt, owner);
+        Location loc = tnt.getLocation();
+        int now = Bukkit.getCurrentTick();
+        UUID blockOwner = takeTntBlockOwner(loc);
+        if (getOwnerFromPDC(tnt) != null) {
+            return; // already stamped (inherited from the explosion that primed it)
+        }
+        UUID owner = blockOwner;
+        if (owner == null) {
+            // Primed by an entity: a chained TNT (stamped), a player's flint & steel, or a projectile.
+            Entity source = tnt.getSource();
+            if (source != null) {
+                owner = getOwnerFromPDC(source);
+                if (owner == null && source instanceof Player player) {
+                    owner = player.getUniqueId();
+                }
+            }
+        }
+        if (owner == null) {
+            owner = matchRecentExplosion(loc, now);
+        }
+        if (owner == null) {
+            owner = matchPendingDispense(loc, tnt);
+        }
+        if (owner == null) {
+            debug("TNT primed at " + loc.getBlockX() + "," + loc.getBlockY() + "," + loc.getBlockZ()
+                    + " -> no recorded owner");
+            return;
+        }
+        stampOwner(tnt, owner);
+        debug("TNT primed at " + loc.getBlockX() + "," + loc.getBlockY() + "," + loc.getBlockZ()
+                + " -> owner " + owner);
+    }
+
+    /** Removes and returns the placer of the TNT block at the primed entity's position. */
+    private UUID takeTntBlockOwner(Location loc) {
+        BlockKey key = BlockKey.of(loc);
+        ExplosiveBlock record = explosiveBlocks.get(key);
+        if (record == null || record.material() != Material.TNT) {
+            return null;
+        }
+        explosiveBlocks.remove(key);
+        return record.owner();
+    }
+
+    /**
+     * Remembers who caused an explosion so TNT primed by it (chain reactions) inherits the owner.
+     * Chained TNT is spawned while the explosion finalizes, right after this event fires.
+     */
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onEntityExplode(EntityExplodeEvent event) {
+        UUID owner = getOwnerFromPDC(event.getEntity());
+        if (owner == null) {
+            return;
+        }
+        Location origin = event.getLocation();
+        double radius = 0.0;
+        for (Block block : event.blockList()) {
+            if (!block.getWorld().equals(origin.getWorld())) {
+                continue;
+            }
+            double dx = block.getX() + 0.5 - origin.getX();
+            double dy = block.getY() + 0.5 - origin.getY();
+            double dz = block.getZ() + 0.5 - origin.getZ();
+            radius = Math.max(radius, Math.sqrt(dx * dx + dy * dy + dz * dz));
+        }
+        int now = Bukkit.getCurrentTick();
+        recentExplosions.add(new RecentExplosion(origin.getWorld().getUID(), origin.getX(), origin.getY(),
+                origin.getZ(), radius + 2.0, owner, now + CHAIN_INHERIT_TICKS));
+        pruneRecentExplosions(now);
+        debug("explosion by owner " + owner + " at " + origin.getBlockX() + "," + origin.getBlockY()
+                + "," + origin.getBlockZ());
+    }
+
+    private UUID matchRecentExplosion(Location loc, int now) {
+        pruneRecentExplosions(now);
+        UUID worldId = loc.getWorld().getUID();
+        UUID best = null;
+        double bestDistSq = Double.MAX_VALUE;
+        for (RecentExplosion record : recentExplosions) {
+            if (!record.worldId().equals(worldId)) {
+                continue;
+            }
+            double dx = loc.getX() - record.x();
+            double dy = loc.getY() - record.y();
+            double dz = loc.getZ() - record.z();
+            double distSq = dx * dx + dy * dy + dz * dz;
+            if (distSq <= record.radius() * record.radius() && distSq < bestDistSq) {
+                best = record.owner();
+                bestDistSq = distSq;
+            }
+        }
+        return best;
+    }
+
+    private void pruneRecentExplosions(int now) {
+        recentExplosions.removeIf(record -> record.expiresAt() < now);
+    }
+
+    /** Drops explosive-block records whose block is gone (destroyed by something other than a player). */
+    private void pruneExplosiveBlocks() {
+        for (Map.Entry<BlockKey, ExplosiveBlock> entry : explosiveBlocks.entrySet()) {
+            BlockKey key = entry.getKey();
+            World world = Bukkit.getWorld(key.worldId());
+            if (world == null || !world.isChunkLoaded(key.x() >> 4, key.z() >> 4)) {
+                continue;
+            }
+            if (world.getBlockAt(key.x(), key.y(), key.z()).getType() == Material.AIR) {
+                explosiveBlocks.remove(key, entry.getValue());
+            }
         }
     }
 
@@ -352,6 +548,31 @@ public class TrapManager implements Listener {
         YamlConfiguration yaml = YamlConfiguration.loadConfiguration(trapsFile);
         loadSection(yaml, "traps", blockOwners);
         loadSection(yaml, "dispensers", dispenserOwners);
+        loadExplosives(yaml);
+    }
+
+    private void loadExplosives(YamlConfiguration yaml) {
+        if (!yaml.isConfigurationSection("explosives")) {
+            return;
+        }
+        for (String key : yaml.getConfigurationSection("explosives").getKeys(false)) {
+            String value = yaml.getString("explosives." + key);
+            BlockKey parsed = parseKey(key);
+            if (parsed == null || value == null) {
+                continue;
+            }
+            int split = value.lastIndexOf(';');
+            if (split <= 0) {
+                continue;
+            }
+            UUID owner = parseUuid(value.substring(0, split));
+            Material material = Material.matchMaterial(value.substring(split + 1));
+            if (owner == null || material == null) {
+                plugin.getLogger().warning("Skipping invalid traps.yml entry: explosives." + key);
+                continue;
+            }
+            explosiveBlocks.put(parsed, new ExplosiveBlock(owner, material));
+        }
     }
 
     private void loadSection(YamlConfiguration yaml, String section, Map<BlockKey, UUID> target) {
@@ -421,6 +642,11 @@ public class TrapManager implements Listener {
         for (Map.Entry<BlockKey, UUID> entry : dispenserOwners.entrySet()) {
             yaml.set("dispensers." + keyString(entry.getKey()), entry.getValue().toString());
         }
+        for (Map.Entry<BlockKey, ExplosiveBlock> entry : explosiveBlocks.entrySet()) {
+            ExplosiveBlock record = entry.getValue();
+            yaml.set("explosives." + keyString(entry.getKey()),
+                    record.owner() + ";" + record.material().name());
+        }
         return yaml;
     }
 
@@ -446,6 +672,10 @@ public class TrapManager implements Listener {
         if (autosaveTask != null) {
             autosaveTask.cancel();
             autosaveTask = null;
+        }
+        if (explosivePruneTask != null) {
+            explosivePruneTask.cancel();
+            explosivePruneTask = null;
         }
         saveTraps();
     }

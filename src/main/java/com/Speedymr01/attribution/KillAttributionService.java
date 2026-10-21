@@ -120,6 +120,16 @@ public class KillAttributionService {
             }
         }
 
+        // 5. Bed / respawn anchor explosions -> placer of the consumed block. Their damage is
+        //    applied before any explosion event fires, so this is the only point where the
+        //    responsibility can be recovered (TNT/entity explosions are covered by step 1).
+        if (cause == EntityDamageEvent.DamageCause.BLOCK_EXPLOSION) {
+            UUID owner = trapManager.getExplosionBlockOwner(victim.getLocation());
+            if (owner != null && !isSelf(owner, victimId)) {
+                return new KillCredit(owner, KillSource.EXPLOSION, null);
+            }
+        }
+
         return null;
     }
 
