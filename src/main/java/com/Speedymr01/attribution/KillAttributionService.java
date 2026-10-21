@@ -65,8 +65,22 @@ public class KillAttributionService {
      * new attribution (in which case the caller keeps the existing getKiller() behavior).
      */
     public KillCredit resolveKill(Player victim) {
-        UUID victimId = victim.getUniqueId();
         EntityDamageEvent lastDamage = victim.getLastDamageCause();
+        KillCredit credit = resolve(victim, lastDamage);
+        if (plugin.getConfig().getBoolean("debug", false)) {
+            String damager = lastDamage instanceof EntityDamageByEntityEvent byEntity
+                    ? byEntity.getDamager().getType().name() : "-";
+            plugin.getLogger().info("[attribution] " + victim.getName()
+                    + " cause=" + (lastDamage == null ? "UNKNOWN" : lastDamage.getCause())
+                    + " damager=" + damager
+                    + " -> " + (credit == null ? "no attribution (fallback to killer/KI)"
+                    : credit.source().configKey() + " by " + credit.credited()));
+        }
+        return credit;
+    }
+
+    private KillCredit resolve(Player victim, EntityDamageEvent lastDamage) {
+        UUID victimId = victim.getUniqueId();
         EntityDamageEvent.DamageCause cause = lastDamage != null ? lastDamage.getCause() : null;
 
         // 1. Lethal damage dealt by a trap-owner-stamped entity (falling block, dispenser projectile/TNT).

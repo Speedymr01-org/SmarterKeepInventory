@@ -74,6 +74,7 @@ public class TrapManager implements Listener {
 
     private final boolean trackDispensers;
     private final boolean persistenceEnabled;
+    private final boolean debug;
     private final long autosaveTicks;
     private final File trapsFile;
     private BukkitTask autosaveTask;
@@ -93,6 +94,7 @@ public class TrapManager implements Listener {
         }
         this.trackDispensers = plugin.getConfig().getBoolean("traps.track-dispensers", true);
         this.persistenceEnabled = plugin.getConfig().getBoolean("traps.persistence-enabled", true);
+        this.debug = plugin.getConfig().getBoolean("debug", false);
         long seconds = Math.max(5L, plugin.getConfig().getLong("traps.autosave-interval-seconds", 300L));
         this.autosaveTicks = seconds * 20L;
 
@@ -142,9 +144,12 @@ public class TrapManager implements Listener {
         Material type = block.getType();
         if (trackedBlocks.contains(type)) {
             blockOwners.put(BlockKey.of(block), event.getPlayer().getUniqueId());
+            debug("placed tracked block " + type + " at " + BlockKey.of(block)
+                    + " for " + event.getPlayer().getName());
         }
         if (trackDispensers && type == Material.DISPENSER) {
             dispenserOwners.put(BlockKey.of(block), event.getPlayer().getUniqueId());
+            debug("placed dispenser at " + BlockKey.of(block) + " for " + event.getPlayer().getName());
         }
     }
 
@@ -177,6 +182,9 @@ public class TrapManager implements Listener {
     }
 
     private void handleFallingBlockSpawn(FallingBlock fallingBlock) {
+        if (getOwnerFromPDC(fallingBlock) != null) {
+            return; // already transferred by the fall-start EntityChangeBlockEvent
+        }
         // The spawn position is exactly the block's coordinates (double coords, integral Y),
         // so the primary key is authoritative — no tolerance scanning (it could wrongly
         // match an adjacent tracked block and lose its ownership).
@@ -185,6 +193,9 @@ public class TrapManager implements Listener {
         UUID owner = blockOwners.remove(primary);
         if (owner != null) {
             stampOwner(fallingBlock, owner);
+            debug("spawn at " + primary + " -> stamped owner " + owner);
+        } else {
+            debug("spawn at " + primary + " -> no recorded owner");
         }
     }
 
@@ -194,14 +205,32 @@ public class TrapManager implements Listener {
             return;
         }
         if (event.getTo() == Material.AIR) {
-            // The falling entity was destroyed (e.g. landed in lava) — nothing to record.
+            // Fires twice for gravity blocks: when the block starts falling (source -> air) and
+            // when a falling block destroys a block on landing. Only the first is the origin.
+            if (getOwnerFromPDC(fallingBlock) != null) {
+                return; // already transferred by the spawn event
+            }
+            Block source = event.getBlock();
+            if (source.getType() != fallingBlock.getBlockData().getMaterial()) {
+                return; // a block destroyed by the falling entity, not its origin
+            }
+            UUID owner = blockOwners.remove(BlockKey.of(source));
+            if (owner != null) {
+                stampOwner(fallingBlock, owner);
+                debug("fall start at " + BlockKey.of(source) + " -> stamped owner " + owner);
+            } else {
+                debug("fall start at " + BlockKey.of(source) + " -> no recorded owner");
+            }
             return;
         }
         UUID owner = getOwnerFromPDC(fallingBlock);
         if (owner == null) {
+            debug("landed " + event.getTo() + " at " + BlockKey.of(event.getBlock())
+                    + " -> unstamped, not recorded");
             return;
         }
         blockOwners.put(BlockKey.of(event.getBlock()), owner);
+        debug("landed " + event.getTo() + " at " + BlockKey.of(event.getBlock()) + " -> owner " + owner);
     }
 
     // ------------------------------------------------------------------
@@ -403,6 +432,12 @@ public class TrapManager implements Listener {
             buildYaml().save(trapsFile);
         } catch (IOException e) {
             plugin.getLogger().severe("Could not save traps.yml: " + e.getMessage());
+        }
+    }
+
+    private void debug(String message) {
+        if (debug) {
+            plugin.getLogger().info("[traps] " + message);
         }
     }
 

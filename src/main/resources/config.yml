@@ -1,10 +1,36 @@
 # SmarterKeepInventory — trap & indirect kill attribution
+# Config version: new defaults in the tracked-block list are merged into existing
+# configs automatically (entries are only ever added, never removed).
+config-version: 2
 
 traps:
-  # Blocks that are tracked when placed (focused on gravity traps).
+  # Blocks tracked when placed (gravity blocks: crush + suffocation credit).
+  # Vanilla only deals impact damage for anvils and pointed dripstone; sand, gravel
+  # and concrete powder kill by suffocation after landing, which is also tracked.
   tracked-blocks:
     - POINTED_DRIPSTONE
     - ANVIL
+    - CHIPPED_ANVIL
+    - DAMAGED_ANVIL
+    - SAND
+    - RED_SAND
+    - GRAVEL
+    - WHITE_CONCRETE_POWDER
+    - ORANGE_CONCRETE_POWDER
+    - MAGENTA_CONCRETE_POWDER
+    - LIGHT_BLUE_CONCRETE_POWDER
+    - YELLOW_CONCRETE_POWDER
+    - LIME_CONCRETE_POWDER
+    - PINK_CONCRETE_POWDER
+    - GRAY_CONCRETE_POWDER
+    - LIGHT_GRAY_CONCRETE_POWDER
+    - CYAN_CONCRETE_POWDER
+    - PURPLE_CONCRETE_POWDER
+    - BLUE_CONCRETE_POWDER
+    - BROWN_CONCRETE_POWDER
+    - GREEN_CONCRETE_POWDER
+    - RED_CONCRETE_POWDER
+    - BLACK_CONCRETE_POWDER
   # Track player-placed dispensers and credit their owner for dispensed projectiles.
   track-dispensers: true
   # Persist trap ownership to traps.yml (autosaved; final save on server stop).
@@ -23,6 +49,9 @@ attribution:
     enabled: true
     # How long an ignition stays valid when the victim later dies of fire (seconds).
     ignition-expiry-seconds: 10
+
+# Verbose console logging for placement, falling-block transfer and attribution results.
+debug: false
 
 messages:
   # Sent only for trap/indirect kills (not for direct PvP). %player% = credited player.
