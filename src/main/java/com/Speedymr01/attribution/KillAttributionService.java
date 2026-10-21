@@ -144,7 +144,7 @@ public class KillAttributionService {
             if (material == Material.POINTED_DRIPSTONE) {
                 return KillSource.DRIPSTONE;
             }
-            if (isAnvil(material)) {
+            if (TrapRules.isAnvil(material)) {
                 return KillSource.ANVIL;
             }
             return KillSource.SUFFOCATION;
@@ -162,12 +162,6 @@ public class KillAttributionService {
             return KillSource.EXPLOSION;
         }
         return KillSource.GENERIC;
-    }
-
-    private boolean isAnvil(Material material) {
-        return material == Material.ANVIL
-                || material == Material.CHIPPED_ANVIL
-                || material == Material.DAMAGED_ANVIL;
     }
 
     /** %effect% placeholder for INDIRECT kills from potion entities. */

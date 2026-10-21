@@ -14,10 +14,7 @@ import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
-import java.util.HashSet;
 import java.util.List;
-import java.util.Locale;
-import java.util.Set;
 
 public class SmarterKeepInventory extends JavaPlugin {
 
@@ -62,27 +59,20 @@ public class SmarterKeepInventory extends JavaPlugin {
         if (getConfig().getInt("config-version", 1) >= 2) {
             return;
         }
-        List<String> tracked = new ArrayList<>(getConfig().getStringList("traps.tracked-blocks"));
-        Set<String> known = new HashSet<>();
-        for (String entry : tracked) {
-            known.add(entry.toUpperCase(Locale.ROOT));
-        }
-        List<String> added = new ArrayList<>();
+        List<String> tracked = getConfig().getStringList("traps.tracked-blocks");
+        List<String> defaults = new ArrayList<>();
         try (InputStream bundledFile = getResource("config.yml")) {
             if (bundledFile != null) {
                 YamlConfiguration bundled = YamlConfiguration.loadConfiguration(
                         new InputStreamReader(bundledFile, StandardCharsets.UTF_8));
-                for (String entry : bundled.getStringList("traps.tracked-blocks")) {
-                    if (known.add(entry.toUpperCase(Locale.ROOT))) {
-                        tracked.add(entry);
-                        added.add(entry);
-                    }
-                }
+                defaults.addAll(bundled.getStringList("traps.tracked-blocks"));
             }
         } catch (IOException e) {
             getLogger().warning("Could not read bundled config.yml for migration: " + e.getMessage());
         }
-        getConfig().set("traps.tracked-blocks", tracked);
+        List<String> merged = ConfigMerge.mergeDistinct(tracked, defaults);
+        List<String> added = merged.subList(tracked.size(), merged.size());
+        getConfig().set("traps.tracked-blocks", merged);
         if (!getConfig().isSet("debug")) {
             getConfig().set("debug", false);
         }

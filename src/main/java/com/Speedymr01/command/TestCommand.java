@@ -1,5 +1,7 @@
 package com.Speedymr01.command;
 
+import com.Speedymr01.command.TestCatalog.Case;
+import com.Speedymr01.command.TestCatalog.Category;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.event.ClickEvent;
 import net.kyori.adventure.text.event.HoverEvent;
@@ -26,104 +28,6 @@ import java.util.concurrent.atomic.AtomicInteger;
  * buttons (all in chat). Results are kept in memory (per player) for the session.
  */
 public class TestCommand implements CommandExecutor, TabCompleter {
-
-    private record Category(String id, String label) {
-    }
-
-    private record Test(String category, String title, String task, String expect) {
-    }
-
-    private static final List<Category> CATEGORIES = List.of(
-            new Category("falling", "Falling blocks"),
-            new Category("dispensers", "Dispensers"),
-            new Category("explosions", "Explosions"),
-            new Category("ignition", "Player ignition"),
-            new Category("baseline", "Baseline / unchanged"),
-            new Category("persistence", "Persistence"));
-
-    private static final List<Test> TESTS = List.of(
-            new Test("falling", "Dripstone fall kill",
-                    "Place pointed dripstone above an enabled player and make it fall on them (break the support block).",
-                    "No keep-inventory; dripstone messages to both players."),
-            new Test("falling", "Anvil squish",
-                    "Drop a player-placed anvil on an enabled player.",
-                    "No keep-inventory; anvil messages to both players."),
-            new Test("falling", "Sand burial (suffocation)",
-                    "Drop player-placed sand on an enabled player and leave them buried until they suffocate.",
-                    "No keep-inventory; suffocation messages to both players."),
-            new Test("falling", "Gravel burial (suffocation)",
-                    "Drop player-placed gravel on an enabled player and leave them buried until they suffocate.",
-                    "No keep-inventory; suffocation messages to both players."),
-            new Test("dispensers", "Dispenser harming potion kill",
-                    "Place a dispenser loaded with a splash Potion of Harming, fire it at an enabled player and let it kill them.",
-                    "Credited to the dispenser placer; indirect message ('harming potion') to both players."),
-            new Test("dispensers", "Own dispenser self-kill (no credit)",
-                    "Use your own dispenser (harming splash or TNT) to kill yourself.",
-                    "No credit: /ki rules apply as normal (usually items kept) and no trap message is sent."),
-            new Test("dispensers", "Dispenser arrow direct kill",
-                    "Place a dispenser with arrows, fire at an enabled player and kill them with a direct hit.",
-                    "Credited to the dispenser placer; arrow messages to both players."),
-            new Test("dispensers", "Dispenser fire charge - direct hit",
-                    "Dispenser fire charge that directly hits and kills the victim.",
-                    "Credited to the dispenser placer (fire message)."),
-            new Test("dispensers", "Dispenser fire charge - burn to death",
-                    "Dispenser fire charge; let the victim burn to death from the fire.",
-                    "Fire message credited to the dispenser placer."),
-            new Test("dispensers", "Dispenser fire charge - sword kill mid-burn",
-                    "Light a player on fire with a dispenser fire charge, then kill them with a sword before they burn out.",
-                    "Credited to the sword player, NOT the dispenser owner."),
-            new Test("dispensers", "While-fighting fire death",
-                    "Let the victim fight another player while a dispenser fire charge burns them to death.",
-                    "Credit goes to the dispenser owner, not the player they were fighting."),
-            new Test("dispensers", "While-fighting wither death",
-                    "Let the victim fight another player while a dispenser launches a wither potion that kills them.",
-                    "Credit goes to the dispenser owner, not the player they were fighting."),
-            new Test("dispensers", "Dispenser TNT",
-                    "Dispenser with TNT; blow up an enabled player.",
-                    "Explosion message credited to the dispenser placer."),
-            new Test("explosions", "Placed TNT (redstone primed)",
-                    "Place a TNT block and prime it with a lever/pressure plate so an enabled player is caught in the blast.",
-                    "Credited to the TNT placer; explosion messages to both players."),
-            new Test("explosions", "TNT chain reaction",
-                    "Prime a line of TNT at one end so the blast chains and kills an enabled player.",
-                    "Credited to the placer for the whole chain (each primed TNT inherits the owner)."),
-            new Test("explosions", "Bed explosion (Nether/End)",
-                    "In the Nether or End, have an enabled player trigger a bed placed by another player.",
-                    "Explosion credited to the bed placer; explosion messages to both players."),
-            new Test("explosions", "Respawn anchor explosion",
-                    "In the Overworld or End, have an enabled player use a charged respawn anchor placed by another player.",
-                    "Explosion credited to the anchor placer; explosion messages to both players."),
-            new Test("ignition", "Player fire charge ignition",
-                    "Burn an enabled player to death with a thrown fire charge.",
-                    "Fire message credited to the thrower."),
-            new Test("ignition", "Flame bow ignition",
-                    "Burn an enabled player to death with a Flame-enchanted bow.",
-                    "Fire message credited to the archer."),
-            new Test("ignition", "Fire Aspect ignition",
-                    "Burn an enabled player to death with a Fire Aspect sword.",
-                    "Fire message credited to the attacker."),
-            new Test("baseline", "PvP sword kill (unchanged)",
-                    "Kill an enabled player with a sword.",
-                    "Items drop as normal; no trap messages."),
-            new Test("baseline", "Mob kill (unchanged)",
-                    "Let a zombie or other mob kill an enabled player.",
-                    "Items kept + the green keep-inventory message; no trap messages."),
-            new Test("baseline", "Victim quits on the death screen",
-                    "Trap-kill an enabled player, have them disconnect while dead, then rejoin.",
-                    "The trap kill message appears when they respawn after rejoining."),
-            new Test("persistence", "Trap ownership survives restart",
-                    "Place an anvil or dripstone trap, restart the server, then trigger it on an enabled player.",
-                    "Still credited after the restart (traps.yml loaded)."),
-            new Test("persistence", "Dispenser ownership survives restart",
-                    "Place a dispenser, restart the server, then fire it at an enabled player.",
-                    "Still credited after the restart (traps.yml loaded)."),
-            new Test("persistence", "Autosave writes traps.yml",
-                    "Place a tracked block and wait for traps.autosave-interval-seconds.",
-                    "The new entry appears in plugins/SmarterKeepInventory/traps.yml without a manual save."),
-            new Test("persistence", "Save on server stop",
-                    "Place a tracked block, then stop the server before the autosave interval elapses.",
-                    "The entry is present in traps.yml after the shutdown save.")
-    );
 
     private enum Answer {
         PASS, FAIL, SKIP
@@ -182,7 +86,7 @@ public class TestCommand implements CommandExecutor, TabCompleter {
         if (args.length == 2 && args[0].equalsIgnoreCase("start")) {
             List<String> options = new ArrayList<>();
             options.add("all");
-            for (Category category : CATEGORIES) {
+            for (Category category : TestCatalog.CATEGORIES) {
                 options.add(category.id());
             }
             return matching(options, args[1]);
@@ -208,11 +112,12 @@ public class TestCommand implements CommandExecutor, TabCompleter {
     private void printList(Player player) {
         Session session = sessions.get(player.getUniqueId());
         player.sendMessage(Component.text("=== SmarterKeepInventory Test Checklist ===", NamedTextColor.GOLD));
-        player.sendMessage(Component.text(TESTS.size() + " tests in " + CATEGORIES.size()
+        player.sendMessage(Component.text(TestCatalog.TESTS.size() + " tests in "
+                + TestCatalog.CATEGORIES.size()
                 + " categories. Run one category at a time or all of them.", NamedTextColor.GRAY));
 
-        for (Category category : CATEGORIES) {
-            List<Integer> indices = indicesFor(category.id());
+        for (Category category : TestCatalog.CATEGORIES) {
+            List<Integer> indices = TestCatalog.indicesFor(category.id());
             int answered = 0;
             for (int index : indices) {
                 if (session != null && session.answerFor(index) != null) {
@@ -240,7 +145,7 @@ public class TestCommand implements CommandExecutor, TabCompleter {
                     icon = "» ";
                     color = NamedTextColor.YELLOW;
                 }
-                player.sendMessage(Component.text(icon + (index + 1) + ". " + TESTS.get(index).title(), color));
+                player.sendMessage(Component.text(icon + (index + 1) + ". " + TestCatalog.TESTS.get(index).title(), color));
             }
         }
 
@@ -283,16 +188,19 @@ public class TestCommand implements CommandExecutor, TabCompleter {
         String requested = args.length > 1 ? args[1] : "all";
         String categoryId = null;
         if (!requested.equalsIgnoreCase("all")) {
-            Category category = resolveCategory(requested);
+            Category category = TestCatalog.resolveCategory(requested);
             if (category == null) {
                 player.sendMessage(Component.text("Unknown category '" + requested + "'. Options: all, "
-                        + String.join(", ", CATEGORIES.stream().map(Category::id).toList()), NamedTextColor.RED));
+                        + String.join(", ", TestCatalog.CATEGORIES.stream().map(Category::id).toList()),
+                        NamedTextColor.RED));
                 return;
             }
             categoryId = category.id();
         }
 
-        List<Integer> indices = categoryId == null ? allIndices() : indicesFor(categoryId);
+        List<Integer> indices = categoryId == null
+                ? TestCatalog.allIndices()
+                : TestCatalog.indicesFor(categoryId);
         if (indices.isEmpty()) {
             player.sendMessage(Component.text("That category has no tests.", NamedTextColor.RED));
             return;
@@ -348,7 +256,7 @@ public class TestCommand implements CommandExecutor, TabCompleter {
             return;
         }
 
-        Test answered = TESTS.get(session.tests.get(index));
+        Case answered = TestCatalog.TESTS.get(session.tests.get(index));
         session.answers[index] = answer;
         session.index++;
         player.sendMessage(switch (answer) {
@@ -367,8 +275,8 @@ public class TestCommand implements CommandExecutor, TabCompleter {
 
     private void printTest(Player player, Session session) {
         int position = session.index;
-        Test test = TESTS.get(session.tests.get(position));
-        player.sendMessage(Component.text("[" + categoryLabel(test.category()) + "] Test "
+        Case test = TestCatalog.TESTS.get(session.tests.get(position));
+        player.sendMessage(Component.text("[" + TestCatalog.categoryLabel(test.category()) + "] Test "
                 + (position + 1) + "/" + session.tests.size() + " — ", NamedTextColor.GOLD)
                 .append(Component.text(test.title(), NamedTextColor.WHITE, TextDecoration.BOLD)));
         player.sendMessage(Component.text("Do: ", NamedTextColor.GRAY)
@@ -427,21 +335,21 @@ public class TestCommand implements CommandExecutor, TabCompleter {
         for (int position = 0; position < session.tests.size(); position++) {
             int globalIndex = session.tests.get(position);
             if (session.answers[position] == Answer.FAIL) {
-                lines.add(Component.text("✘ " + (globalIndex + 1) + ". " + TESTS.get(globalIndex).title(),
+                lines.add(Component.text("✘ " + (globalIndex + 1) + ". " + TestCatalog.TESTS.get(globalIndex).title(),
                         NamedTextColor.RED));
             }
         }
         for (int position = 0; position < session.tests.size(); position++) {
             int globalIndex = session.tests.get(position);
             if (session.answers[position] == Answer.SKIP) {
-                lines.add(Component.text("» " + (globalIndex + 1) + ". " + TESTS.get(globalIndex).title()
+                lines.add(Component.text("» " + (globalIndex + 1) + ". " + TestCatalog.TESTS.get(globalIndex).title()
                         + " (skipped)", NamedTextColor.YELLOW));
             }
         }
         for (int position = 0; position < session.tests.size(); position++) {
             int globalIndex = session.tests.get(position);
             if (session.answers[position] == null) {
-                lines.add(Component.text("• " + (globalIndex + 1) + ". " + TESTS.get(globalIndex).title()
+                lines.add(Component.text("• " + (globalIndex + 1) + ". " + TestCatalog.TESTS.get(globalIndex).title()
                         + " (untested)", NamedTextColor.YELLOW));
             }
         }
@@ -454,56 +362,7 @@ public class TestCommand implements CommandExecutor, TabCompleter {
         }
     }
 
-    // ------------------------------------------------------------------
-    // Categories
-    // ------------------------------------------------------------------
-
-    private List<Integer> allIndices() {
-        List<Integer> indices = new ArrayList<>(TESTS.size());
-        for (int i = 0; i < TESTS.size(); i++) {
-            indices.add(i);
-        }
-        return indices;
-    }
-
-    private List<Integer> indicesFor(String categoryId) {
-        List<Integer> indices = new ArrayList<>();
-        for (int i = 0; i < TESTS.size(); i++) {
-            if (TESTS.get(i).category().equals(categoryId)) {
-                indices.add(i);
-            }
-        }
-        return indices;
-    }
-
-    /** Resolves an exact or unambiguous prefix match (case-insensitive), or null. */
-    private Category resolveCategory(String raw) {
-        String needle = raw.toLowerCase();
-        Category prefixMatch = null;
-        for (Category category : CATEGORIES) {
-            if (category.id().equals(needle)) {
-                return category;
-            }
-            if (category.id().startsWith(needle)) {
-                if (prefixMatch != null) {
-                    return null; // ambiguous prefix
-                }
-                prefixMatch = category;
-            }
-        }
-        return prefixMatch;
-    }
-
-    private String categoryLabel(String id) {
-        for (Category category : CATEGORIES) {
-            if (category.id().equals(id)) {
-                return category.label();
-            }
-        }
-        return id;
-    }
-
     private String scopeLabel(Session session) {
-        return session.category == null ? "all categories" : categoryLabel(session.category);
+        return session.category == null ? "all categories" : TestCatalog.categoryLabel(session.category);
     }
 }

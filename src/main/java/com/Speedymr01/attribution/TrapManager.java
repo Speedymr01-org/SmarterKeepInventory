@@ -5,7 +5,6 @@ import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.NamespacedKey;
-import org.bukkit.Tag;
 import org.bukkit.World;
 import org.bukkit.block.Block;
 import org.bukkit.configuration.file.YamlConfiguration;
@@ -225,13 +224,7 @@ public class TrapManager implements Listener {
      */
     private void trackExplosiveBlock(Block block, Player player) {
         Material type = block.getType();
-        World.Environment environment = block.getWorld().getEnvironment();
-        boolean explosive = type == Material.TNT
-                || (Tag.BEDS.isTagged(type)
-                && (environment == World.Environment.NETHER || environment == World.Environment.THE_END))
-                || (type == Material.RESPAWN_ANCHOR
-                && (environment == World.Environment.NORMAL || environment == World.Environment.THE_END));
-        if (!explosive) {
+        if (!TrapRules.isCreditedExplosive(type, block.getWorld().getEnvironment())) {
             return;
         }
         explosiveBlocks.put(BlockKey.of(block),
