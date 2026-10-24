@@ -6,6 +6,7 @@ import com.Speedymr01.attribution.TrapManager;
 import com.Speedymr01.command.KeepInvCommand;
 import com.Speedymr01.command.TestCommand;
 import com.Speedymr01.manager.KeepInvManager;
+import com.Speedymr01.metrics.MetricsService;
 import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.plugin.java.JavaPlugin;
 
@@ -25,11 +26,15 @@ public class SmarterKeepInventory extends JavaPlugin {
     private KeepInvManager keepInvManager;
     private KeepInvCommand keepInvCommand;
     private TestCommand testCommand;
+    private MetricsService metricsService;
 
     @Override
     public void onEnable() {
         saveDefaultConfig();
         migrateConfig();
+
+        this.metricsService = new MetricsService(this);
+        this.metricsService.start();
 
         this.dataManager = new DataManager(this);
         this.trapManager = new TrapManager(this);
@@ -85,6 +90,9 @@ public class SmarterKeepInventory extends JavaPlugin {
 
     @Override
     public void onDisable() {
+        if (metricsService != null) {
+            metricsService.shutdown();
+        }
         if (keepInvManager != null) {
             keepInvManager.cancelAll();
         }

@@ -53,6 +53,11 @@ attribution:
 # Verbose console logging for placement, falling-block transfer and attribution results.
 debug: false
 
+# Anonymous usage statistics via bStats (https://bstats.org/what-is-my-plugin-id).
+# Only aggregate server/feature data is sent; no player names or UUIDs.
+# Set to false to opt out.
+metrics-enabled: true
+
 messages:
   # Sent only for trap/indirect kills (not for direct PvP). %player% = credited player.
   kills:
