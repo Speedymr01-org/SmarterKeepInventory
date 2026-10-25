@@ -20,7 +20,7 @@ SmarterKeepInventory is a Minecraft plugin that allows players to toggle their o
 
 ## Installation
 
-1. Download the `SmarterKeepInventory-1.1.1.jar`.
+1. Download the `SmarterKeepInventory-1.2.0.jar`.
 2. Place it in your server's `plugins` folder.
 3. Restart the server.
 
