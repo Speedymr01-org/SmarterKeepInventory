@@ -8,6 +8,7 @@ SmarterKeepInventory is a Minecraft plugin that allows players to toggle their o
 - **Anti-Cheat Activation**: To enable keep-inventory, players must remain stationary for 5 seconds. Moving or changing worlds cancels the process.
 - **Persistent Storage**: Settings are saved across sessions.
 - **Combat Balance**: Keep-inventory only triggers if the player dies without a killer, preventing abuse in PvP.
+- **Death Notice**: Every death gets one line from the plugin — green when the inventory was kept, red ("You died and lost your inventory.") when it dropped. Trap kills use their own message instead. Text is configurable under `messages.inventory` in `config.yml`.
 
 ## Commands
 
@@ -19,14 +20,13 @@ SmarterKeepInventory is a Minecraft plugin that allows players to toggle their o
 
 ## Installation
 
-1. Download the `SmarterKeepInventory-1.1.0.jar`.
+1. Download the `SmarterKeepInventory-1.1.1.jar`.
 2. Place it in your server's `plugins` folder.
 3. Restart the server.
 
 ## Requirements
 
-- Minecraft Server version 1.21
-- Spigot/Paper API
+- Minecraft Server version 26.1.2 (Paper)
 
 ## Metrics
 

@@ -88,23 +88,46 @@ public class KeepInvManager implements Listener {
         // Trap / indirect attribution (cause-first). Credited kills never keep inventory.
         KillCredit credit = attributionService.resolveKill(player);
         if (credit != null) {
-            deliverTrapKillMessages(credit, player);
+            boolean victimNotified = deliverTrapKillMessages(credit, player);
+            // The trap message is the death notice; only fill in when none is configured.
+            if (!victimNotified) {
+                sendInventoryMessage(player, false);
+            }
             return;
         }
 
         Player killer = player.getKiller();
-        if (killer != null) return;
+        if (killer != null) {
+            // Direct PvP: this plugin never keeps inventory and sends nothing else.
+            sendInventoryMessage(player, false);
+            return;
+        }
 
         UUID uuid = player.getUniqueId();
         if (isEnabled(uuid)) {
             event.setKeepInventory(true);
             event.getDrops().clear();
             event.setDroppedExp(0);
-            player.sendMessage(Component.text("Your items were kept (keep inventory is enabled).", NamedTextColor.GREEN));
+            sendInventoryMessage(player, true);
+        } else {
+            sendInventoryMessage(player, false);
         }
     }
 
-    private void deliverTrapKillMessages(KillCredit credit, Player victim) {
+    /**
+     * Sends the "kept / lost your items" line. Green when the inventory was kept, red when the
+     * death is handled by nothing else here, so a death is never silent.
+     */
+    private void sendInventoryMessage(Player player, boolean kept) {
+        String text = plugin.getConfig().getString(
+                kept ? "messages.inventory.kept" : "messages.inventory.lost",
+                kept ? "Your items were kept (keep inventory is enabled)."
+                        : "You died and lost your inventory.");
+        player.sendMessage(Component.text(text, kept ? NamedTextColor.GREEN : NamedTextColor.RED));
+    }
+
+    /** @return whether the victim will get a trap death message (queued until they respawn) */
+    private boolean deliverTrapKillMessages(KillCredit credit, Player victim) {
         String path = "messages.kills." + credit.source().configKey() + ".";
         String creditedName = resolveName(credit.credited());
         String victimName = victim.getName();
@@ -119,10 +142,12 @@ public class KeepInvManager implements Listener {
         }
 
         String victimText = plugin.getConfig().getString(path + "victim", "");
-        if (!victimText.isEmpty()) {
-            pendingVictimMessages.put(victim.getUniqueId(), Component.text(
-                    format(victimText, creditedName, victimName, credit.effectLabel()), NamedTextColor.RED));
+        if (victimText.isEmpty()) {
+            return false;
         }
+        pendingVictimMessages.put(victim.getUniqueId(), Component.text(
+                format(victimText, creditedName, victimName, credit.effectLabel()), NamedTextColor.RED));
+        return true;
     }
 
     private String format(String template, String creditedName, String victimName, String effectLabel) {

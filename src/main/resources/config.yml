@@ -59,6 +59,11 @@ debug: false
 metrics-enabled: true
 
 messages:
+  # Sent to the player who died, unless a trap kill message already covers the death.
+  # Green = inventory kept, red = inventory dropped.
+  inventory:
+    kept: "Your items were kept (keep inventory is enabled)."
+    lost: "You died and lost your inventory."
   # Sent only for trap/indirect kills (not for direct PvP). %player% = credited player.
   kills:
     dripstone:

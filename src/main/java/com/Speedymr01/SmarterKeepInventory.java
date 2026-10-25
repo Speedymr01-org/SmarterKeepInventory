@@ -61,6 +61,11 @@ public class SmarterKeepInventory extends JavaPlugin {
      * Only ever adds entries — user choices are never removed.
      */
     private void migrateConfig() {
+        migrateToV2();
+        migrateMessages();
+    }
+
+    private void migrateToV2() {
         if (getConfig().getInt("config-version", 1) >= 2) {
             return;
         }
@@ -85,6 +90,23 @@ public class SmarterKeepInventory extends JavaPlugin {
         saveConfig();
         if (!added.isEmpty()) {
             getLogger().info("Updated config to v2: added tracked blocks " + String.join(", ", added));
+        }
+    }
+
+    /** Adds the kept/lost death notice keys to configs written before they existed. */
+    private void migrateMessages() {
+        boolean changed = false;
+        if (!getConfig().isSet("messages.inventory.kept")) {
+            getConfig().set("messages.inventory.kept", "Your items were kept (keep inventory is enabled).");
+            changed = true;
+        }
+        if (!getConfig().isSet("messages.inventory.lost")) {
+            getConfig().set("messages.inventory.lost", "You died and lost your inventory.");
+            changed = true;
+        }
+        if (changed) {
+            saveConfig();
+            getLogger().info("Added messages.inventory.kept / messages.inventory.lost to config.yml");
         }
     }
 
